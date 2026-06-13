@@ -2,16 +2,17 @@
 using UnityEngine.InputSystem;
 using Animancer;
 
+[RequireComponent(typeof(Rigidbody))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Capsule")]
+    [Header("Capsule / Physics")]
     public CapsuleCollider capsule;
     public LayerMask collisionMask;
 
     [Header("Movement")]
     public float moveSpeed = 6f;
     public float sprintSpeed = 9f;
-    public float rotationSmooth = 10f;
+    public float rotationSmooth = 15f;
 
     [Header("Jumping")]
     public float jumpSpeed = 7f;
@@ -20,9 +21,6 @@ public class PlayerController : MonoBehaviour
     [Header("Gravity")]
     public float gravityMultiplier = 1f;
     public float groundSnapDistance = 0.3f;
-
-    [Header("Step")]
-    public float stepHeight = 0.3f;
 
     [Header("Input")]
     public InputActionReference moveAction;
@@ -40,122 +38,54 @@ public class PlayerController : MonoBehaviour
     public AnimationClip sprintClip;
     public AnimationClip jumpClip;
 
-    Vector3 velocity;
-    Vector3 surfaceNormal = Vector3.up;
-    float verticalVel;
-    float coyoteCounter;
-    bool grounded;
-    private bool _initializedGroundSnap = false;
+    private Rigidbody rb;
+    private Vector3 surfaceNormal = Vector3.up;
+    private float verticalVel;
+    private float coyoteCounter;
+    private bool grounded;
+
+    // Input Caching
+    private Vector2 inputVector;
+    private bool isSprinting;
+    private bool jumpRequested;
+
+    void Start()
+    {
+        rb = GetComponent<Rigidbody>();
+
+        // CRITICAL: Prevent Unity's physics from tipping Mario over globally
+        rb.useGravity = false;
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+    }
 
     void Update()
     {
-        Vector2 input = moveAction.action.ReadValue<Vector2>();
-        bool sprint = sprintAction.action.ReadValue<float>() > 0.5f;
+        // Gather input values every frame smoothly
+        inputVector = moveAction.action.ReadValue<Vector2>();
+        isSprinting = sprintAction.action.ReadValue<float>() > 0.5f;
 
+        if (jumpAction.action.triggered)
+        {
+            jumpRequested = true;
+        }
+
+        // Keep camera target tracked over frame cycles
         PlanetGravity planet = GravityManager.GetNearestPlanet(transform.position);
-        Vector3 gravityDir = planet.GetGravityDirection(transform.position);
-
-        // Surface normal
-        surfaceNormal = SurfaceNormalResolver.ResolveSurfaceNormal(
-            transform.position,
-            gravityDir,
-            3f,
-            collisionMask,
-            surfaceNormal
-        );
-
-        // -------------------------
-        // TRUE MARIO GALAXY INPUT SYSTEM
-        // -------------------------
-        Vector3 up = surfaceNormal;
-
-        // 1. Extract camera yaw-only forward (pitch removed)
-        Vector3 camForward = cameraTransform.forward;
-        camForward = Vector3.ProjectOnPlane(camForward, up).normalized;
-
-        // 2. If projection collapses, fallback to player forward
-        if (camForward.sqrMagnitude < 0.01f)
-            camForward = Vector3.ProjectOnPlane(transform.forward, up).normalized;
-
-        // 3. Extract camera yaw-only right (pitch removed)
-        Vector3 camRight = cameraTransform.right;
-        camRight = Vector3.ProjectOnPlane(camRight, up).normalized;
-
-        // 4. Build movement direction from yaw-only frame
-        Vector3 moveDir = camForward * input.y + camRight * input.x;
-
-        // 5. Normalize if needed
-        if (moveDir.sqrMagnitude > 0.001f)
-            moveDir.Normalize();
-
-        float speed = sprint ? sprintSpeed : moveSpeed;
-        Vector3 horizontalVel = moveDir * speed;
-
-        // Jump
-        if (jumpAction.action.triggered && coyoteCounter > 0f)
+        if (planet != null)
         {
-            verticalVel = jumpSpeed;
-            grounded = false;
-            coyoteCounter = 0f;
-            animancer.Play(jumpClip, 0.1f);
+            Vector3 gravityDir = planet.GetGravityDirection(transform.position);
+            cameraTarget.up = -gravityDir;
         }
 
-        // Gravity
-        if (!grounded)
-            verticalVel -= planet.gravityStrength * gravityMultiplier * Time.deltaTime;
-
-        // Combine
-        velocity = horizontalVel + (-gravityDir * verticalVel);
-
-        // Capsule sweep
-        CollisionSolver.SweepResult sweep = CollisionSolver.MoveCapsule(
-            transform.position,
-            capsule.center,
-            capsule.height,
-            capsule.radius,
-            velocity * Time.deltaTime,
-            collisionMask,
-            stepHeight
-        );
-
-        transform.position = sweep.position;
-
-        // Ground check
-        grounded = Physics.Raycast(transform.position, gravityDir, out RaycastHit hit, groundSnapDistance, collisionMask);
-
-        if (grounded)
-        {
-            verticalVel = 0f;
-            coyoteCounter = coyoteTime;
-        }
-        else
-        {
-            coyoteCounter -= Time.deltaTime;
-        }
-
-        // Rotation
-        if (moveDir.sqrMagnitude > 0.01f)
-        {
-            Quaternion targetRot = Quaternion.LookRotation(moveDir, up);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, rotationSmooth * Time.deltaTime);
-        }
-        else
-        {
-            Quaternion targetRot = Quaternion.FromToRotation(transform.up, up) * transform.rotation;
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, rotationSmooth * Time.deltaTime);
-        }
-
-        // Align camera target with gravity
-        cameraTarget.up = up;
-
-        // Animations
+        // Drive animations based on grounded status
         if (!grounded)
         {
             animancer.Play(jumpClip, 0.1f);
         }
-        else if (moveDir.sqrMagnitude > 0.1f)
+        else if (inputVector.sqrMagnitude > 0.01f)
         {
-            animancer.Play(sprint ? sprintClip : walkClip, 0.1f);
+            animancer.Play(isSprinting ? sprintClip : walkClip, 0.1f);
         }
         else
         {
@@ -163,19 +93,97 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    void LateUpdate()
+    void FixedUpdate()
     {
-        if (!_initializedGroundSnap)
+        PlanetGravity planet = GravityManager.GetNearestPlanet(transform.position);
+        if (planet == null) return;
+
+        Vector3 gravityDir = planet.GetGravityDirection(transform.position);
+
+        // 1. Resolve Surface Normal (Safe multi-sampling)
+        surfaceNormal = SurfaceNormalResolver.ResolveSurfaceNormal(
+            transform.position,
+            gravityDir,
+            3f,
+            collisionMask,
+            surfaceNormal,
+            capsule.radius
+        );
+
+        // 2. Mario Galaxy Core-to-Normal Blending
+        Vector3 coreUp = -gravityDir;
+        Vector3 playerUp = Vector3.Slerp(coreUp, surfaceNormal, 0.3f).normalized;
+
+        // 3. Keep Player Oriented Upwards Relative to the Sphere
+        Quaternion currentRotationWithoutYaw = Quaternion.FromToRotation(transform.up, playerUp) * transform.rotation;
+        transform.rotation = Quaternion.Slerp(transform.rotation, currentRotationWithoutYaw, rotationSmooth * Time.fixedDeltaTime);
+
+        // 4. ROBUST CAM-TARGET COORDINATE SYSTEM (Independent of Camera Pitch/Tilt Flips)
+        // Instead of sampling the raw camera transform (which skews at the poles and bottom),
+        // we use the stable, non-tilting orientation frame of your cameraTarget anchor.
+        Vector3 targetRight = cameraTarget.right;
+
+        // Flatten the right vector onto the player's current standing planet tangent plane
+        Vector3 cleanPlaneRight = Vector3.ProjectOnPlane(targetRight, playerUp).normalized;
+
+        // Derive forward by crossing the clean planar right axis with your local planet up vector.
+        // This builds a perfect 2D grid that smoothly curves all the way around to the bottom of the sphere.
+        Vector3 cleanPlaneForward = Vector3.Cross(cleanPlaneRight, playerUp).normalized;
+
+        // Ensure baseline fallbacks if tracking vectors experience rounding errors
+        if (cleanPlaneForward.sqrMagnitude < 0.01f) cleanPlaneForward = transform.forward;
+        if (cleanPlaneRight.sqrMagnitude < 0.01f) cleanPlaneRight = transform.right;
+
+        // Map inputs directly to your custom spherical plane coordinate system
+        // Pushing "Up" on the stick will now seamlessly follow the planet's contour forward!
+        Vector3 moveDir = (cleanPlaneForward * inputVector.y + cleanPlaneRight * inputVector.x).normalized;
+
+
+
+        // [Steps 5 & 6 handle ground-checking and jumping via your working Rigidbody setup...]
+        Vector3 rayOrigin = transform.position + playerUp * (capsule.height * 0.5f);
+        float totalRayLength = (capsule.height * 0.5f) + groundSnapDistance;
+        grounded = Physics.Raycast(rayOrigin, -playerUp, out RaycastHit groundHit, totalRayLength, collisionMask);
+
+        if (grounded)
         {
-            PlanetGravity planet = GravityManager.GetNearestPlanet(transform.position);
-            Vector3 gravityDir = planet.GetGravityDirection(transform.position);
+            coyoteCounter = coyoteTime;
+            rb.AddForce(gravityDir * planet.gravityStrength * gravityMultiplier, ForceMode.Acceleration);
 
-            if (Physics.Raycast(transform.position + (-gravityDir * 0.1f), gravityDir, out RaycastHit hit, 5f, collisionMask))
+            if (jumpRequested && coyoteCounter > 0f)
             {
-                transform.position = hit.point - gravityDir * (capsule.height * 0.5f - capsule.radius);
+                rb.linearVelocity = Vector3.ProjectOnPlane(rb.linearVelocity, playerUp) + (playerUp * jumpSpeed);
+                grounded = false;
+                coyoteCounter = 0f;
             }
-
-            _initializedGroundSnap = true;
         }
+        else
+        {
+            coyoteCounter -= Time.fixedDeltaTime;
+            rb.AddForce(gravityDir * planet.gravityStrength * gravityMultiplier, ForceMode.Acceleration);
+        }
+        jumpRequested = false;
+
+        // 7. Rigidbody Movement Velocity Translation
+        float targetSpeed = isSprinting ? sprintSpeed : moveSpeed;
+        Vector3 targetHorizontalVelocity = moveDir * (inputVector.magnitude * targetSpeed);
+
+        // Maintain falling/jumping momentum cleanly along the current playerUp axis
+        Vector3 currentVerticalVelocity = Vector3.Project(rb.linearVelocity, playerUp);
+        rb.linearVelocity = targetHorizontalVelocity + currentVerticalVelocity;
+
+        // 8. Independent Heading Turning (Stops the right-becomes-forward orientation loop)
+        if (moveDir.sqrMagnitude > 0.01f)
+        {
+            // Calculate a clean look rotation that matches your input path relative to the spherical frame
+            Quaternion targetFacingRot = Quaternion.LookRotation(moveDir, playerUp);
+
+            // Turn Mario's physical core transform toward the vector independently of the camera's anchor targets
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetFacingRot, rotationSmooth * Time.fixedDeltaTime);
+        }
+
+        // Keep the baseline tracking target oriented flat with your cosmic gravity vector
+        cameraTarget.up = playerUp;
+
     }
 }
