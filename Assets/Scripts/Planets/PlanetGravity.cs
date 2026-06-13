@@ -12,7 +12,6 @@ public class PlanetGravity : MonoBehaviour
     public float gravityStrength = 30f;
 
     [Header("Gravity Field Thickness")]
-    [Tooltip("How far out past the object's physical edge scale the gravity pull extends.")]
     public float gravityFieldThickness = 15f;
 
     [Header("Debug")]
@@ -22,13 +21,44 @@ public class PlanetGravity : MonoBehaviour
 
     public Vector3 GetGravityDirection(Vector3 playerPos)
     {
+        // ---------------------------------------------------------------------
+        // THE CUBE CORNER FIXED CALCULATION (Perpendicular Face Gravity)
+        // ---------------------------------------------------------------------
+        if (gravityShape == GravityShape.Box)
+        {
+            // Convert the player's position into the local coordinate system of the box
+            Vector3 localPos = transform.InverseTransformPoint(playerPos);
+
+            // Determine which axis face the player is closest to by finding the dominant coordinate
+            float absX = Mathf.Abs(localPos.x);
+            float absY = Mathf.Abs(localPos.y);
+            float absZ = Mathf.Abs(localPos.z);
+
+            // Pull flatly toward the local X, Y, or Z face depending on where Mario is standing
+            if (absX > absY && absX > absZ)
+            {
+                // Pull toward local left or right face
+                return transform.TransformDirection(new Vector3(-Mathf.Sign(localPos.x), 0f, 0f));
+            }
+            if (absY > absX && absY > absZ)
+            {
+                // Pull toward local top or bottom face (This keeps Mario completely upright on the block!)
+                return transform.TransformDirection(new Vector3(0f, -Mathf.Sign(localPos.y), 0f));
+            }
+            else
+            {
+                // Pull toward local front or back face
+                return transform.TransformDirection(new Vector3(0f, 0f, -Mathf.Sign(localPos.z)));
+            }
+        }
+
+        // Standard Spheres and Capsules still use center-point line calculations
         Vector3 closestPointOnCore = GetClosestPointOnCore(playerPos);
         Vector3 direction = closestPointOnCore - playerPos;
 
-        // Core safety fallback to prevent division-by-zero camera spins
         if (direction.sqrMagnitude < 0.001f)
         {
-            return -transform.up; // Default to local downward direction
+            return -transform.up;
         }
 
         return direction.normalized;
@@ -58,11 +88,9 @@ public class PlanetGravity : MonoBehaviour
         switch (gravityShape)
         {
             case GravityShape.Box:
-                // Transform position to box local space to do an axis-aligned check using lossyScale
                 Vector3 localPos = transform.InverseTransformPoint(playerPos);
-                Vector3 halfSize = Vector3.one * 0.5f; // Box is 1x1x1 in local space
+                Vector3 halfSize = Vector3.one * 0.5f;
 
-                // Convert the world thickness value into local space thickness based on scale
                 Vector3 localThickness = new Vector3(
                     gravityFieldThickness / Mathf.Max(0.001f, transform.lossyScale.x),
                     gravityFieldThickness / Mathf.Max(0.001f, transform.lossyScale.y),
@@ -92,7 +120,7 @@ public class PlanetGravity : MonoBehaviour
         {
             case GravityShape.Box:
                 Vector3 localPos = transform.InverseTransformPoint(playerPos);
-                Vector3 halfSize = Vector3.one * 0.5f; // Unit box dimensions
+                Vector3 halfSize = Vector3.one * 0.5f;
 
                 float closestX = Mathf.Clamp(localPos.x, -halfSize.x, halfSize.x);
                 float closestY = Mathf.Clamp(localPos.y, -halfSize.y, halfSize.y);
@@ -112,10 +140,8 @@ public class PlanetGravity : MonoBehaviour
     private Vector3 GetClosestPointOnCapsuleSegment(Vector3 playerPos)
     {
         Vector3 localPos = transform.InverseTransformPoint(playerPos);
-
-        // Calculate the capsule line segment based directly on local scale values
-        float radius = 0.5f; // Unit capsule radius is 0.5
-        float totalHeight = transform.lossyScale.y / Mathf.Max(0.001f, transform.lossyScale.x); // Height relative to width
+        float radius = 0.5f;
+        float totalHeight = transform.lossyScale.y / Mathf.Max(0.001f, transform.lossyScale.x);
         float capsuleLineHalfLength = Mathf.Max(0f, (totalHeight * 0.5f) - radius);
 
         localPos.y = Mathf.Clamp(localPos.y, -capsuleLineHalfLength, capsuleLineHalfLength);
@@ -130,17 +156,13 @@ public class PlanetGravity : MonoBehaviour
         if (!drawGizmos) return;
 
         Matrix4x4 originalMatrix = Gizmos.matrix;
-
-        // Set the gizmo drawing matrix to look at our object's exact world scale transformations
         Gizmos.matrix = transform.localToWorldMatrix;
 
         switch (gravityShape)
         {
             case GravityShape.Sphere:
                 Gizmos.color = surfaceColor;
-                Gizmos.DrawWireSphere(Vector3.zero, 0.5f); // 0.5 local radius * scale = true size
-
-                // Calculate field thickness boundary accurately matching scale
+                Gizmos.DrawWireSphere(Vector3.zero, 0.5f);
                 float localSphereFieldRadius = 0.5f + (gravityFieldThickness / Mathf.Max(0.001f, transform.lossyScale.x));
                 Gizmos.color = fieldColor;
                 Gizmos.DrawWireSphere(Vector3.zero, localSphereFieldRadius);
@@ -149,7 +171,6 @@ public class PlanetGravity : MonoBehaviour
             case GravityShape.Box:
                 Gizmos.color = surfaceColor;
                 Gizmos.DrawWireCube(Vector3.zero, Vector3.one);
-
                 Vector3 localBoxFieldThickness = new Vector3(
                     (gravityFieldThickness * 2f) / Mathf.Max(0.001f, transform.lossyScale.x),
                     (gravityFieldThickness * 2f) / Mathf.Max(0.001f, transform.lossyScale.y),
@@ -160,8 +181,7 @@ public class PlanetGravity : MonoBehaviour
                 break;
 
             case GravityShape.Capsule:
-                DrawCapsuleGizmo(surfaceColor, 0.5f, 2f); // Default unit capsule proportions
-
+                DrawCapsuleGizmo(surfaceColor, 0.5f, 2f);
                 float radOffset = gravityFieldThickness / Mathf.Max(0.001f, transform.lossyScale.x);
                 float heightOffset = (gravityFieldThickness * 2f) / Mathf.Max(0.001f, transform.lossyScale.y);
                 DrawCapsuleGizmo(fieldColor, 0.5f + radOffset, 2f + heightOffset);

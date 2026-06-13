@@ -124,16 +124,24 @@ public class PlayerController : MonoBehaviour
             transform
         );
 
-        // 2 & 3. DYNAMIC GRAVITY FIELD BLENDING
+        // ---------------------------------------------------------------------
+        // 2 & 3. SMOOTH GEOMETRY CORNER INTERPOLATION (No Jagged Snaps)
+        // ---------------------------------------------------------------------
         Vector3 coreUp = -gravityDir;
         Vector3 targetPlayerUp = Vector3.Slerp(coreUp, surfaceNormal, 0.3f).normalized;
 
-        float activeGravitySmooth = grounded ? rotationSmooth : midAirGravitySmooth;
+        // Determine our smoothing factor. If running over a cube edge, we use a 
+        // specialized corner blend value (8f) to ensure Mario transitions face angles 
+        // smoothly without jerking, while staying glued tightly enough to prevent sliding.
+        float boxRotationSmooth = 8f;
+        float activeGravitySmooth = grounded ? (planet.gravityShape == GravityShape.Box ? boxRotationSmooth : rotationSmooth) : midAirGravitySmooth;
+
         playerUp = Vector3.Slerp(playerUp, targetPlayerUp, activeGravitySmooth * Time.fixedDeltaTime).normalized;
 
-        // Apply the smoothed planetary alignment orientation to the capsule root
+        // Apply the beautifully smoothed alignment orientation to the capsule physics container
         Quaternion currentRotationWithoutYaw = Quaternion.FromToRotation(transform.up, playerUp) * transform.rotation;
         transform.rotation = Quaternion.Slerp(transform.rotation, currentRotationWithoutYaw, rotationSmooth * Time.fixedDeltaTime);
+
 
         // 4. PURE VIEWPORT SCREEN COORDINATE MATRIX
         Vector3 camRightAxis = cameraTransform.right;
@@ -145,7 +153,7 @@ public class PlayerController : MonoBehaviour
 
         Vector3 moveDir = (cleanPlaneForward * inputVector.y + cleanPlaneRight * inputVector.x).normalized;
 
-        // 5. PRECISE DETECTIVE GROUND CHECKING
+        // 5. PRECISE DETECTIVE GROUND CHECKING (Fired from capsule center)
         if (jumpLockoutTimer <= 0f)
         {
             Vector3 rayOrigin = transform.position + playerUp * (capsule.height * 0.5f);
@@ -172,7 +180,9 @@ public class PlayerController : MonoBehaviour
             }
             else
             {
-                verticalVel = -1f;
+                // CRITICAL CUBE GLUE FORCE: 
+                // Increase clamping slightly if running on flat box walls to fight linear speed drift
+                verticalVel = (planet.gravityShape == GravityShape.Box) ? -2.5f : -1f;
             }
         }
         else
@@ -219,4 +229,5 @@ public class PlayerController : MonoBehaviour
             transform.rotation = Quaternion.Slerp(transform.rotation, targetHeadingRotation, rotationSmooth * Time.fixedDeltaTime);
         }
     }
+
 }
