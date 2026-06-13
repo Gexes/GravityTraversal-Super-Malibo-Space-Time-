@@ -11,8 +11,8 @@ GameObject:
   - component: {fileID: 2451271811042757136}
   - component: {fileID: 6712450386776849522}
   - component: {fileID: 6668015293666917239}
-  - component: {fileID: 2850868012411456853}
-  - component: {fileID: 2361693209387381458}
+  - component: {fileID: 6773543552222008167}
+  - component: {fileID: 6281098586871454251}
   m_Layer: 5
   m_Name: HelpUI
   m_TagString: Untagged
@@ -72,7 +72,7 @@ MonoBehaviour:
   OnHelpDismissed:
     m_PersistentCalls:
       m_Calls: []
---- !u!114 &2850868012411456853
+--- !u!114 &6773543552222008167
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -87,7 +87,7 @@ MonoBehaviour:
   m_FirstSelected: {fileID: 0}
   m_sendNavigationEvents: 1
   m_DragThreshold: 10
---- !u!114 &2361693209387381458
+--- !u!114 &6281098586871454251
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
