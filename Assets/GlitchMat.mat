@@ -49,7 +49,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _GlitchNoise:
-        m_Texture: {fileID: 2800000, guid: 2ab75f11890490d4f90274285d69762f, type: 3}
+        m_Texture: {fileID: 2800000, guid: 788c4262354e65249bd6fa2096084231, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
@@ -101,9 +101,9 @@ Material:
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
-    - _GlitchIntensity: 92.2
-    - _GlitchScale: 0.62
-    - _GlitchSpeed: 56.77
+    - _GlitchIntensity: 16.99
+    - _GlitchScale: 0.92
+    - _GlitchSpeed: 48.28
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0

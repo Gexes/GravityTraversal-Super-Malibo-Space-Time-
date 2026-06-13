@@ -26,17 +26,22 @@ public class LaunchStar : MonoBehaviour
     {
         Rigidbody rb = player.GetComponent<Rigidbody>();
 
-        // 1. Freeze player physics and player inputs entirely
+        // 1. Freeze player physics loops and standard keyboard inputs
         player.enabled = false;
         rb.isKinematic = true;
 
+        // 2. THE ANIMATION FIX: Command Animancer to override the player state
+        // and force-play the 'flyClip' defined inside your player script.
+        if (player.animancer != null && player.flyClip != null)
+        {
+            player.animancer.Play(player.flyClip, 0.15f); // 0.15s crossfade blend time
+        }
+
         float elapsed = 0f;
 
-        // 2. THE BLUR FIX: Run the spline traversal exclusively inside the physics frame loop!
-        // This ensures the player's position is updated on the exact same clock tick as the camera.
+        // 3. Traversal loop along the custom spline track (Physics-synchronized)
         while (elapsed < launchDuration)
         {
-            // Use Time.fixedDeltaTime instead of Time.deltaTime because we are syncing with FixedUpdate
             elapsed += Time.fixedDeltaTime;
             float normalizedTime = Mathf.Clamp01(elapsed / launchDuration);
 
@@ -44,34 +49,30 @@ public class LaunchStar : MonoBehaviour
             Vector3 targetPosition = splineContainer.EvaluatePosition(normalizedTime);
             player.transform.position = targetPosition;
 
-            // 3. Dynamic Mid-Air Orientation Alignment
+            // Dynamic Mid-Air Orientation Alignment
             PlanetGravity currentPlanet = GravityManager.GetNearestPlanet(player.transform.position);
             if (currentPlanet != null)
             {
-                // Pull gravity direction relative to the planet we are flying over
                 Vector3 currentGravityDir = currentPlanet.GetGravityDirection(player.transform.position);
                 Vector3 localPlanetUp = -currentGravityDir;
 
-                // Sample the forward vector of the spline track to know where Mario is flying
+                // Sample the forward vector of the spline track to orient the body direction
                 Vector3 splineForward = splineContainer.EvaluateTangent(normalizedTime);
                 Vector3 cleanForward = Vector3.ProjectOnPlane(splineForward, localPlanetUp).normalized;
 
                 if (cleanForward.sqrMagnitude > 0.01f)
                 {
-                    // Generate a look rotation that sits flat with gravity but faces along the track
                     Quaternion targetFlightRotation = Quaternion.LookRotation(cleanForward, localPlanetUp);
-
-                    // Smoothly rotate the player mesh frame using fixed timings
                     player.transform.rotation = Quaternion.Slerp(player.transform.rotation, targetFlightRotation, 8f * Time.fixedDeltaTime);
                 }
             }
 
-            // CRITICAL SYNC HOOK: Force the loop to hold until the next physics loop (FixedUpdate tick)
-            // Changing this from 'yield return null' stops the ghosting/blurring effect completely.
             yield return new WaitForFixedUpdate();
         }
 
-        // 4. Reset simulation states cleanly on touchdown
+        // 4. Reset simulation states cleanly on touchdown. 
+        // When player.enabled turns back true, the standard Update loop animation tree 
+        // will automatically take back over and clear the flight state!
         rb.isKinematic = false;
         player.enabled = true;
     }

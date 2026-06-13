@@ -40,6 +40,8 @@ public class PlayerController : MonoBehaviour
     public AnimationClip walkClip;
     public AnimationClip sprintClip;
     public AnimationClip jumpClip;
+    [Tooltip("The animation that plays while riding a Launch Star spline track.")]
+    public AnimationClip flyClip; // Added Flight Animation Clip Reference
 
     private Rigidbody rb;
     private Vector3 surfaceNormal = Vector3.up;
@@ -53,9 +55,9 @@ public class PlayerController : MonoBehaviour
     private bool isSprinting;
     private bool jumpRequested;
 
-    // UN-STICKY JUMP VARIABLES
+    // Un-sticky jump variables
     private float jumpLockoutTimer = 0f;
-    private const float JumpLockoutDuration = 0.12f; // Time in seconds ground raycast sleeps after takeoff
+    private const float JumpLockoutDuration = 0.12f;
 
     // Cache the current heading vector to smoothly maintain direction when inputs cease
     private Vector3 currentHeadingForward;
@@ -143,7 +145,7 @@ public class PlayerController : MonoBehaviour
 
         Vector3 moveDir = (cleanPlaneForward * inputVector.y + cleanPlaneRight * inputVector.x).normalized;
 
-        // 5. PRECISE DETECTIVE GROUND CHECKING (With Polar Lockout Integration)
+        // 5. PRECISE DETECTIVE GROUND CHECKING
         if (jumpLockoutTimer <= 0f)
         {
             Vector3 rayOrigin = transform.position + playerUp * (capsule.height * 0.5f);
@@ -152,7 +154,6 @@ public class PlayerController : MonoBehaviour
         }
         else
         {
-            // Force character airborne status while the rocket takeoff cooldown is running
             grounded = false;
         }
 
@@ -167,11 +168,11 @@ public class PlayerController : MonoBehaviour
                 verticalVel = jumpSpeed;
                 grounded = false;
                 coyoteCounter = 0f;
-                jumpLockoutTimer = JumpLockoutDuration; // Initialize the grounding lockout timer
+                jumpLockoutTimer = JumpLockoutDuration;
             }
             else
             {
-                verticalVel = -1f; // Clamps the capsule cleanly to the planet surface while moving
+                verticalVel = -1f;
             }
         }
         else
@@ -179,22 +180,18 @@ public class PlayerController : MonoBehaviour
             coyoteCounter -= Time.fixedDeltaTime;
             rb.AddForce(gravityDir * planet.gravityStrength * gravityMultiplier, ForceMode.Acceleration);
 
-            // Extract current vertical velocity components relative to playerUp while falling
             verticalVel = Vector3.Dot(rb.linearVelocity, playerUp);
             verticalVel -= planet.gravityStrength * gravityMultiplier * Time.fixedDeltaTime;
         }
 
-        // Reset read state
         jumpRequested = false;
 
         // 7. Rigidbody Movement Velocity Translation
         float targetSpeed = isSprinting ? sprintSpeed : moveSpeed;
         Vector3 targetHorizontalVelocity = moveDir * (inputVector.magnitude * targetSpeed);
 
-        // Slide perfectly along slopes and curvatures
         if (grounded)
         {
-            // Find the active surface normal via raycast hit context data
             Vector3 hitNormal = -gravityDir;
             Vector3 checkOrigin = transform.position + playerUp * (capsule.height * 0.5f);
             float totalRayLength = (capsule.height * 0.5f) + groundSnapDistance;
@@ -206,7 +203,6 @@ public class PlayerController : MonoBehaviour
             targetHorizontalVelocity = Vector3.ProjectOnPlane(targetHorizontalVelocity, hitNormal).normalized * targetHorizontalVelocity.magnitude;
         }
 
-        // Apply velocities cleanly to the physics engine
         rb.linearVelocity = targetHorizontalVelocity + (playerUp * verticalVel);
 
         // 8. ABSOLUTE VIEWPORT MESH TURNING ENGINE
