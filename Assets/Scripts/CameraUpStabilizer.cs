@@ -6,22 +6,29 @@ public class CameraUpStabilizer : MonoBehaviour
     public Transform playerTransform;
 
     [Header("Orientation Blending")]
-    [Tooltip("How fast the camera horizon rolls and flips to accommodate a new planet's gravity angle mid-air. Lower values = smoother cinematic transitions.")]
+    [Tooltip("How smoothly the camera horizon rolls and tilts to accommodate a new planet's gravity angle.")]
     public float gravityRotationSmooth = 3f;
 
-    // Cache the active tracking vector across frames to prevent sudden jumps
-    private Vector3 smoothedPlanetaryUp = Vector3.up;
+    [Header("Cinemachine Y-Rotation Control")]
+    [Tooltip("Check this TRUE to stop Cinemachine from executing a 180-degree Y rotation (yaw) spin flip when Mario goes upside down between planets!")]
+    public bool preventYFlipOnHop = true;
+
+    // Cache the orientation matrix across frames
+    private Quaternion smoothedRotation = Quaternion.identity;
+
+    // Permanent world reference direction to serve as our locked global camera compass pole
+    private readonly Vector3 globalCompassForward = Vector3.forward;
 
     void Start()
     {
         if (playerTransform != null)
         {
-            // Establish baseline alignment at boot
             PlanetGravity planet = GravityManager.GetNearestPlanet(playerTransform.position);
             if (planet != null)
             {
-                smoothedPlanetaryUp = (playerTransform.position - planet.transform.position).normalized;
-                transform.up = smoothedPlanetaryUp;
+                Vector3 initialPlanetaryUp = (playerTransform.position - planet.transform.position).normalized;
+                smoothedRotation = Quaternion.LookRotation(playerTransform.forward, initialPlanetaryUp);
+                transform.rotation = smoothedRotation;
             }
         }
     }
@@ -30,19 +37,40 @@ public class CameraUpStabilizer : MonoBehaviour
     {
         if (playerTransform == null) return;
 
-        // Query your existing GravityManager to find the active planet Mario is standing on
         PlanetGravity planet = GravityManager.GetNearestPlanet(playerTransform.position);
         if (planet == null) return;
 
-        // 1. Calculate the raw, absolute vertical normal vector pointing straight away from the planet's core
+        // 1. Calculate the raw vertical normal vector pointing straight away from the planet's core
         Vector3 rawPlanetaryUp = (playerTransform.position - planet.transform.position).normalized;
 
-        // 2. HOTSNAP FIX Smoothly blend our tracking vector over time using Slerp.
-        // Instead of hard-snapping when crossing into a new gravity bubble mid-air, 
-        // the camera's reference horizon plane will glide gracefully toward the new axis!
-        smoothedPlanetaryUp = Vector3.Slerp(smoothedPlanetaryUp, rawPlanetaryUp, gravityRotationSmooth * Time.fixedDeltaTime).normalized;
+        // 2. THE CHOSEN HEADING ENGINE
+        Vector3 cleanForward;
 
-        // 3. Lock this object's rotation to face our smoothed planet curvature profile
-        transform.up = smoothedPlanetaryUp;
+        if (preventYFlipOnHop)
+        {
+            // THE ULTIMATE NO-Y-FLIP SOLUTION: Instead of reading where Mario's shoulders/face are looking
+            // (which flips 180 degrees upside down), we project a permanent global world coordinate axis flat.
+            // Because this reference never flips in the universe, Cinemachine's Orbital Follow sees a completely 
+            // stable look target, forcing its local Y rotation to stay flat and refuse to spin!
+            cleanForward = Vector3.ProjectOnPlane(globalCompassForward, rawPlanetaryUp).normalized;
+
+            // Handle absolute edge case pole alignments safely
+            if (cleanForward.sqrMagnitude < 0.01f)
+            {
+                cleanForward = Vector3.ProjectOnPlane(Vector3.up, rawPlanetaryUp).normalized;
+            }
+        }
+        else
+        {
+            // Standard tracking mode: Camera follows Mario's direct character heading direction
+            cleanForward = Vector3.ProjectOnPlane(playerTransform.forward, rawPlanetaryUp).normalized;
+            if (cleanForward.sqrMagnitude < 0.01f) cleanForward = transform.forward;
+        }
+
+        // 3. Construct and smoothly blend the finalized stable tracking rotation matrix
+        Quaternion targetRotation = Quaternion.LookRotation(cleanForward, rawPlanetaryUp);
+        smoothedRotation = Quaternion.Slerp(smoothedRotation, targetRotation, gravityRotationSmooth * Time.fixedDeltaTime);
+
+        transform.rotation = smoothedRotation;
     }
 }
